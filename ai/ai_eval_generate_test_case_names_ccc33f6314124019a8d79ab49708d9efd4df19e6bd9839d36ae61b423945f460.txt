@@ -1,0 +1,7 @@
+[
+  "test_fibonacci_with_0_as_input_to_check_first_fibonacci_number",
+  "test_fibonacci_with_1_as_input_to_check_second_fibonacci_number",
+  "test_fibonacci_with_small_positive_integer_to_check_if_function_returns_correct_intermediate_fibonacci_number",
+  "test_fibonacci_with_larger_positive_integer_to_verify_functions_ability_to_compute_higher_order_fibonacci_numbers",
+  "test_fibonacci_edge_case_with_the_largest_integer_expected_to_be_correctly_handled_by_the_function"
+]
