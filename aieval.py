@@ -43,8 +43,15 @@ def _wrap(func: Callable, validators: Dict={}, ext: str="txt") -> Callable:
 def aieval(*args, **kwargs) -> Callable:
     """A decorator that evaluates a functions from its pre and post conditions and the given inputs
     using the OpenAI API."""
+
+    # is it a validators dictionary?
+    if args and isinstance(args[0], dict):
+        validators = args[0]
+    else:
+        validators = {}
+
     if kwargs:
-        validators = kwargs.get("validators", {})
+        validators = kwargs.get("validators", validators)
         ext = kwargs.get("ext", "txt")
         def f(func):
             return _wrap(func, validators=validators, ext=ext)

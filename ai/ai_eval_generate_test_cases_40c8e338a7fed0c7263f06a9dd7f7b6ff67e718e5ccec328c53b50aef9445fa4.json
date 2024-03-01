@@ -1,0 +1,37 @@
+[
+  {
+    "description": "A test case where the input is a positive float within the normal range",
+    "input": 5.0,
+    "expected_output": "A float which is the computed gamma function value of 5.0, expected to be approximately 24.0 (since the gamma function of n is (n-1)! for positive integers)"
+  },
+  {
+    "description": "A test case where the input is a small positive float, testing the function's accuracy with small numbers",
+    "input": 0.5,
+    "expected_output": "A float which is the computed gamma function value of 0.5, expected to be approximately 1.77245 (the square root of pi)"
+  },
+  {
+    "description": "A test case where the input is a negative float, testing the function's handling of negative inputs",
+    "input": -3.5,
+    "expected_output": "A float which is the computed gamma function value of -3.5, demonstrating the function's capability to handle and return values for negative inputs"
+  },
+  {
+    "description": "A test case where the input is a very large positive float, testing the function's performance and accuracy with large numbers",
+    "input": 1000.0,
+    "expected_output": "A float result, mainly testing if the function could handle very large values without errors or significant loss of precision"
+  },
+  {
+    "description": "A test case where the input is exactly 0, testing the edge case where the input is on the boundary of the gamma function's domain",
+    "input": 0,
+    "expected_output": "A TypeError or a specific output indicating that gamma function is not defined for 0, adhering to the precondition that input must be a float and considering the mathematical undefined nature of gamma at 0"
+  },
+  {
+    "description": "A test case where the input is a non-float number (integer), testing the strictness of the input type precondition",
+    "input": 5,
+    "expected_output": "TypeError or an appropriate error message, reinforcing the precondition that the input must strictly be a float"
+  },
+  {
+    "description": "A test case where the input is a float in string format, examining type-checking mechanisms",
+    "input": "3.5",
+    "expected_output": "TypeError or an appropriate error message, maintaining the precondition that the input must be a float and not any other type, even if it represents a float"
+  }
+]

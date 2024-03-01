@@ -1,6 +1,7 @@
 from typing import Callable
 
-from ai import ai, aieval
+from ai import ai, aieval, generate_python
+from format import JSON
 
 
 @ai
@@ -22,25 +23,10 @@ def fibonacci(n: int) -> int:
 
 
 @ai
-def get_function_signature(func: Callable) -> str:
-    """
-    @pre "func" is a Python Callable
-    @post the return value is the signature of the function
-    @post the signature includes the argument type annotations
-    @post the signature includes the return type annotation
-    """
+def gamma_function(x: float) -> float:
     pass
 
 
-@aieval
-def conditions_from_description(desc: str) -> str:
-    """
-    @post the return value is a signature, preconditions and postconditions of the described function
-    """
-
-
-# Bring functions into global scope and make the list of functions a precondition
-
-print(lorum_ipsum(10))
-print(fibonacci(10))
-print(get_function_signature(get_function_signature))
+# print(lorum_ipsum(10))
+# print(fibonacci(10))
+print(gamma_function(3))

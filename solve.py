@@ -1,11 +1,7 @@
-import functools
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from chat import Chat, ExcessContextError
-
-
-PYTHON_FUNCTION_CLAUSE_TYPE = "Python function"
 
 
 class CompletionError(Exception):
@@ -14,11 +10,6 @@ class CompletionError(Exception):
 
 async def decide(question: str, context: str="") -> Tuple[bool, str]:
     """Ask a yes/no question and return the answer."""
-
-
-@functools.lru_cache(maxsize=1000)
-def cached_is_callable(symbol: Any) -> bool:
-    return callable(symbol)
 
 
 async def solve(
@@ -46,13 +37,6 @@ async def solve(
     def format_list(items: List[str]) -> str:
         """Given a list of assumptions, return a string where each assumption is formatted as a list item."""
         return "".join(format_list_item(assumption) for assumption in items)
-
-    if (clauseType.startswith(PYTHON_FUNCTION_CLAUSE_TYPE)):
-        global_functions = "The following functions are available.\n"
-        for key, value in globals():
-            if cached_is_callable(value):
-                global_functions += f"\t{key}: {value.__name__}\n"
-        inputs.append(global_functions)
 
     formatted_assumptions = format_list(preconditions + ["assumptions are assumed to hold true, and any verification of them is erroneous"] + inputs)
     formatted_objectives = format_list(
@@ -107,9 +91,12 @@ async def solve(
     generator.exposition(base_prompt)
     text = await generator.interact(f"Produce a {clauseType} satisfying the objectives based on the assumptions.\n")
 
-    iterations -= 1
-
-    while (suggestion := await discriminate(text)) and iterations > 0:
+    while iterations > 0:
+        iterations -= 1
+        suggestion = await discriminate(text)
+        if suggestion is None:
+            break
+        
         suggestion += "\nReply with a self-contained satisfication of the objectives and nothing more. Avoid other changes than those suggested.\n"
         try:
             text = await generator.interact(suggestion)

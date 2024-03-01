@@ -48,6 +48,7 @@ class Chat:
         return new_text
 
     async def decide(self, question: str):
+        await self.interact(question + " Explain your reasoning.")
         self.context += "\n=== QUESTION (YES/NO) ===\n"
         self.context += question
         self.context += "\n=== ANSWER (YES/NO)===\n"

@@ -1,0 +1,1 @@
+{"signature": "get_random_number() -> int", "preconditions": [], "postconditions": ["The return value is an integer.", "The return value is a random number."]}

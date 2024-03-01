@@ -1,12 +1,21 @@
 import asyncio
+import functools
 import io
+import inspect
+import json
 import sys
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
 from aieval import aieval
 from cache import CacheEntry
-from funcutils import create_callable_from_str, dump_last_exception, extract_conditions_from_docstring, function_signature, is_valid_function_definition
-from solve import solve, PYTHON_FUNCTION_CLAUSE_TYPE
+from format import JSON, PYTHON
+from funcutils import create_callable_from_str, dump_last_exception, extract_conditions_from_docstring, function_signature
+from solve import solve
+
+
+@functools.lru_cache(maxsize=1000)
+def cached_is_callable(symbol: Any) -> bool:
+    return callable(symbol)
 
 
 def run_function_test(function_under_test: str, test_function: str) -> Optional[str]:
@@ -28,21 +37,8 @@ def run_function_test(function_under_test: str, test_function: str) -> Optional[
     return output
 
 
-python_validators = {
-    "The text contains undesirable metadata in the form of a language formatting block": lambda x: (
-        x.split("\n")[0]
-        if x.startswith("```")
-        else x.split("\n")[-1] if x.endswith("```") else None
-    ),
-    "The text does not begin with 'def ' and a function name": lambda x: (
-        x.split("\n")[0] if not x.startswith("def ") else None
-    ),
-    "The text is not a single python function definition": lambda x: (
-        x if not is_valid_function_definition(x) else None
-    ),
-}
 
-@aieval
+@aieval(JSON, ext="json")
 def generate_test_cases(signature: str, preconditions: List[str], postconditions: List[str]) -> List[str]:
     """
     @pre "signature" is a string representing the function signature
@@ -53,7 +49,7 @@ def generate_test_cases(signature: str, preconditions: List[str], postconditions
     pass
 
 
-@aieval
+@aieval(JSON, ext="json")
 def generate_test_case_names(signature: str, preconditions: List[str], postconditions: List[str], test_cases: List[str]) -> List[str]:
     """
     @pre "signature" is signature of the function under test
@@ -66,7 +62,7 @@ def generate_test_case_names(signature: str, preconditions: List[str], postcondi
     pass
 
 
-@aieval(validators=python_validators, ext="py")
+@aieval(PYTHON, ext="py")
 async def generate_test(signature: str, preconditions: List[str], postconditions: List[str], test_name: str, test_description: str) -> str:
     """
     @pre "signature" is signature of the function under test
@@ -86,7 +82,7 @@ async def generate_test(signature: str, preconditions: List[str], postconditions
     pass
 
 
-@aieval(validators=python_validators, ext="py")
+@aieval(PYTHON, ext="py")
 async def refine_test(signature: str, preconditions: List[str], postconditions: List[str], test_name: str, test_description: str, test_function: str, refinement_data: str) -> str:
     """
     @pre "signature" is signature of the function under test
@@ -131,13 +127,9 @@ async def accuse_test_failure(signature: str, preconditions: List[str], postcond
     pass
 
 
-def ai(func: Callable) -> Callable:
-    """A decorator that generates the body of a function from its pre and post conditions using the
-    OpenAI API. Functions will be cached in the wordking directory."""
-    # Use introspection to get the pre and post conditions from the docstring
-    name = func.__name__
-    sig = function_signature(func)
-    pre, post = extract_conditions_from_docstring(func.__doc__)
+def generate_python(name, sig, pre, post):
+    """Generate the body of a Python function from its pre and post conditions."""
+    post = list(post)
     post.append("The function has a docstring")
     py_file = None
 
@@ -171,10 +163,20 @@ def ai(func: Callable) -> Callable:
                         else:
                             break
 
-            python_validators2 = dict(python_validators)
+            python_validators2 = dict(PYTHON)
             python_validators2["The function does not pass the test cases"] = tester
 
-            func_def = asyncio.run(solve(pre, [], post, f"{PYTHON_FUNCTION_CLAUSE_TYPE} with signature `{sig}`", validators=python_validators2))
+            global_functions = "The following functions are available.\n"            
+            for value in globals().values():
+                if cached_is_callable(value):
+                    if value.__name__ == name:
+                        continue
+                    docstring_lines = [f'\t{line}' for line in value.__doc__.splitlines()]
+                    global_functions + "\n"
+                    global_functions += f"def {value.__name__}{inspect.signature(value)}:\n\t{docstring_lines}\n"
+
+
+            func_def = asyncio.run(solve(pre, [global_functions], post, f"Python function with signature `{sig}`", validators=python_validators2))
                 
             cache.set(func_def)
 
@@ -182,6 +184,48 @@ def ai(func: Callable) -> Callable:
 
     with open(py_file, "r") as source_file:
         func_def = source_file.read()
+
+    return func_def
+
+
+@aieval(JSON, ext="json")
+def conditions_from_description(desc: str, signature: str) -> str:
+    """
+    @pre "desc" is a plain-language description of a Python function
+    @pre "signature" is a Python function signature
+    @post the return value is JSON
+    @post the return value contains a key "preconditions" containing a list of strings, each containing plain-language, of the preconditions of the described function
+    @post the return value contains a key "postconditions" containing a list of strings, each containing plain-language, of the postconditions of the described function
+    @post the preconditions do not make any assumptions other than about the input arguments, or the preconditions are empty if there are no arguments
+    @post the postconditions do not make any assumptions other than about the return value
+    """
+
+
+@aieval(JSON, ext="json")
+def conditions_from_signature(signature: str) -> str:
+    """
+    @pre "signature" is a Python function signature
+    @post the return value is JSON
+    @post the return value contains a key "preconditions" containing a list of strings, each containing plain-language, of the preconditions of the described function
+    @post the return value contains a key "postconditions" containing a list of strings, each containing plain-language, of the postconditions of the described function
+    @post the preconditions do not make any assumptions other than about the input arguments, or the preconditions are empty if there are no arguments
+    @post the postconditions do not make any assumptions other than about the return value
+    """
+
+
+def ai(func: Callable) -> Callable:
+    """A decorator that generates the body of a function from its pre and post conditions using the
+    OpenAI API. Functions will be cached in the wordking directory."""
+    # Use introspection to get the pre and post conditions from the docstring
+    name = func.__name__
+    sig = function_signature(func)
+    pre, post = extract_conditions_from_docstring(func.__doc__)
+    if not pre and not post:
+        conditions = json.loads(conditions_from_description(func.__doc__, sig))
+        pre, post = conditions["preconditions"], conditions["postconditions"]
+
+    # Do the work of generating the function implementation
+    func_def = generate_python(name, sig, pre, post)
 
     result = create_callable_from_str(func_def)
     result.__doc__ = result.__doc__ + "\n" + func.__doc__

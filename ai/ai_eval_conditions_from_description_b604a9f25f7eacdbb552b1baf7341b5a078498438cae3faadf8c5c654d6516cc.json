@@ -1,0 +1,8 @@
+{
+  "preconditions": [
+    "The input argument x must be a float."
+  ],
+  "postconditions": [
+    "The function returns a float which is the computed value of the gamma function for the given input x."
+  ]
+}

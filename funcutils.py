@@ -9,6 +9,9 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 def extract_conditions_from_docstring(docstring: str) -> Tuple[List[str], List[str]]:
     """Extract preconditions and postconditions from a docstring."""
+    if docstring is None:
+        return [], []
+
     preconditions = [
         line.lstrip()[5:].lstrip()
         for line in docstring.split("\n")
@@ -19,15 +22,13 @@ def extract_conditions_from_docstring(docstring: str) -> Tuple[List[str], List[s
         for line in docstring.split("\n")
         if line.lstrip().startswith("@post ")
     ]
-    assert preconditions, "The docstring must contain at least one precondition."
-    assert postconditions, "The docstring must contain at least one postcondition."
     return preconditions, postconditions
 
 
 def function_signature(func: Callable) -> str:
     """Return the function signature of a function, including annotations."""
     spec = inspect.getfullargspec(func)
-    return f"{func.__name__}({', '.join(f'{arg}: {spec.annotations[arg].__name__}' for arg in spec.args)}) -> {spec.annotations.get('return', type(None)).__name__}"
+    return f"{func.__name__}{inspect.signature(func)}"
 
 
 def is_valid_function_definition(func_str: str) -> bool:
