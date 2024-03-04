@@ -1,0 +1,8 @@
+[
+  "test_fibonacci_base_case_0",
+  "test_fibonacci_base_case_1",
+  "test_fibonacci_for_n_equals_2",
+  "test_fibonacci_typical_small_value_5",
+  "test_fibonacci_larger_value_20",
+  "test_fibonacci_edge_case_largest_integer_40"
+]

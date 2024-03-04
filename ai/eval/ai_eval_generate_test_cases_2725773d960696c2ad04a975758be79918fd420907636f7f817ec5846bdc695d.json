@@ -1,0 +1,38 @@
+[
+  {
+    "description": "Test with a positive float to verify the output is a float and correctly represents the gamma function evaluated at x.",
+    "inputs": {
+      "x": 2.5
+    }
+  },
+  {
+    "description": "Test with a positive integer cast as float to verify the output is a float and correctly represents the gamma function evaluated at x.",
+    "inputs": {
+      "x": 3.0
+    }
+  },
+  {
+    "description": "Test with a small positive float close to zero (but not zero) to verify if the function computes correctly for values approaching zero from the right.",
+    "inputs": {
+      "x": 0.1
+    }
+  },
+  {
+    "description": "Test with a negative float (not an integer) to ensure the function can handle negative inputs that are not non-positive integers.",
+    "inputs": {
+      "x": -3.5
+    }
+  },
+  {
+    "description": "Test with a positive float very large in magnitude to see if the function can handle large inputs correctly.",
+    "inputs": {
+      "x": 100.0
+    }
+  },
+  {
+    "description": "Test with a negative float, very close to a non-positive integer, but not an integer, to ensure it handles edge cases near non-allowed values correctly.",
+    "inputs": {
+      "x": -1.0001
+    }
+  }
+]

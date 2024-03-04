@@ -69,7 +69,9 @@ def is_valid_function_definition(func_str: str) -> bool:
         return False
 
 
-def create_callable_from_str(func_str: str, namespace: Optional[Dict]=None) -> Callable:
+def create_callable_from_str(
+    func_str: str, namespace: Optional[Dict] = None
+) -> Callable:
     """Create a callable from a string containing a function definition."""
 
     if not is_valid_function_definition(func_str):
@@ -79,7 +81,8 @@ def create_callable_from_str(func_str: str, namespace: Optional[Dict]=None) -> C
 
     # Define a unique namespace (dict) to execute the function definition in isolation
     if namespace is None:
-        namespace = {}
+        # Make a new namespace like the globals but separate
+        namespace = dict(globals())
 
     # Extract the function name from the provided string
     if not (m := re.match(r"def\s+(\w+)\s*\(", func_str)):
@@ -135,12 +138,12 @@ def convert_typing_type(input_type, input_str):
 
     if input_type == str:
         return input_str
-    
+
     # Parse the input string using json.loads for basic JSON structures
     parsed_input = json.loads(input_str)
 
     # Match the input_type and return the appropriately parsed input
-    if hasattr(input_type, '__origin__'):
+    if hasattr(input_type, "__origin__"):
         # Handle List[T]
         if input_type.__origin__ == list:
             return [item for item in parsed_input]
@@ -153,7 +156,7 @@ def convert_typing_type(input_type, input_str):
         # Handle Tuple[T, ...]
         elif input_type.__origin__ == tuple:
             return tuple(parsed_input)
-    
+
     return input_type(parsed_input)
 
 
@@ -167,6 +170,6 @@ def extract_argument_assumption(
     spec: inspect.FullArgSpec, *args, **kwargs
 ) -> List[str]:
     """Given a function signature and its arguments, return a list of assumptions about the arguments."""
-    return [f"{arg} is {value}" for arg, value in zip(spec.args, args)] + [
+    return [f"{arg} is \"{value}\"" for arg, value in zip(spec.args, args)] + [
         f"The argument {arg} is {value}" for arg, value in kwargs.items()
     ]

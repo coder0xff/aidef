@@ -1,0 +1,1 @@
+{"sig": "haiku() -> str", "pre": [], "post": ["the return value is a haiku"], "inputs": []}

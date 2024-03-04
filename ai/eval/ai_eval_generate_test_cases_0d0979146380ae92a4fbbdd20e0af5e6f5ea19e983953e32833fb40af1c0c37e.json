@@ -1,0 +1,44 @@
+[
+  {
+    "description": "Test for the base case of 0, the first Fibonacci number",
+    "inputs": {
+      "n": 0
+    },
+    "expected_output": 0
+  },
+  {
+    "description": "Test for the base case of 1, the second Fibonacci number",
+    "inputs": {
+      "n": 1
+    },
+    "expected_output": 1
+  },
+  {
+    "description": "Test for n=2, verifying the third Fibonacci number is correct",
+    "inputs": {
+      "n": 2
+    },
+    "expected_output": 1
+  },
+  {
+    "description": "Test n at a typical small value of 5, checking the sequence progresses correctly",
+    "inputs": {
+      "n": 5
+    },
+    "expected_output": 5
+  },
+  {
+    "description": "Test n at a larger value to verify algorithm efficiency and correctness",
+    "inputs": {
+      "n": 20
+    },
+    "expected_output": 6765
+  },
+  {
+    "description": "Test for the edge case of the largest integer value that is reasonable for the execution environment to handle without performance degradation",
+    "inputs": {
+      "n": 40
+    },
+    "expected_output": 102334155
+  }
+]

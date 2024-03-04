@@ -1,50 +1,21 @@
-import json
-
-from funcutils import create_callable_from_str, dump_last_exception, extract_conditions_from_docstring, function_signature, is_valid_function_definition
+from typing import List
 
 
-NO_LANGUAGE_FORMATTING_BLOCK = {
-    "The text contains undesirable metadata in the form of a language formatting block": lambda x: (
-        None
-        if not (x.startswith("```") and x.endswith("```"))
-        else x.split("\n")[1:-1]
-    ),
-}
+def indent(text: str, amount: int = 4) -> str:
+    return "\n".join(" " * amount + line for line in text.splitlines())
 
 
-def _is_quoted_string(x):
-    try:
-        value = eval(x)
-    except Exception as e:
-        return False        
-    return isinstance(value, str)
+def format_list_item(item: str) -> str:
+    """Format a list item with indentation and a bullet point."""
+    head, *tail = item.splitlines()
+    result = f"    * {head}\n" + indent("\n".join(tail))
+    if not result.endswith("\n"):
+        result += "\n"
+    return result
 
 
-NO_QUOTES = {
-    "The text is surrounded by quotes": lambda x: 'remove the quotes' if _is_quoted_string(x) else None,
-}
+def format_list(items: List[str]) -> str:
+    """Given a list of assumptions, return a string where each assumption is formatted as a list item."""
+    return "".join(format_list_item(assumption) for assumption in items)
 
-PYTHON = {
-    **NO_LANGUAGE_FORMATTING_BLOCK,
-    "The text does not begin with 'def ' and a function name": lambda x: (
-        x.split("\n")[0] if not x.startswith("def ") else None
-    ),
-    "The text is not a single python function definition": lambda x: (
-        x if not is_valid_function_definition(x) else None
-    ),
-}
 
-def _is_json(x):
-    try:
-        json.loads(x)
-    except json.JSONDecodeError as e:
-        dump_last_exception(e)
-        return False
-    else:
-        return True
-    
-JSON = {
-    **NO_LANGUAGE_FORMATTING_BLOCK,
-    **NO_QUOTES,
-    "The text is not valid JSON": lambda x: None if _is_json(x) else x,
-}

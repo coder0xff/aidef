@@ -1,0 +1,8 @@
+[
+    "test_gamma_function_with_positive_float",
+    "test_gamma_function_with_positive_integer_as_float",
+    "test_gamma_function_with_small_positive_float_close_to_zero",
+    "test_gamma_function_with_negative_float",
+    "test_gamma_function_with_large_positive_float",
+    "test_gamma_function_with_negative_float_close_to_non_positive_integer"
+]

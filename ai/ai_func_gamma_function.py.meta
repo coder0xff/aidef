@@ -1,0 +1,1 @@
+{"sig": "gamma_function(x: float) -> float", "pre": ["The input x must be a float.", "The input x should not be a non-positive integer."], "post": ["The function returns a float.", "The returned float is the gamma function evaluated at x."]}

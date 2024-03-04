@@ -1,9 +1,0 @@
-[
-    "test_gamma_function_with_positive_float_within_normal_range",
-    "test_gamma_function_with_small_positive_float",
-    "test_gamma_function_with_negative_float",
-    "test_gamma_function_with_very_large_positive_float",
-    "test_gamma_function_with_input_zero",
-    "test_gamma_function_with_integer_input",
-    "test_gamma_function_with_float_in_string_format"
-]

@@ -1,1 +1,1 @@
-{"sig": "lorum_ipsum(words: int) -> str", "pre": ["\"words\" is a non-negative integer"], "post": ["the return value is a lorem ipsum with a word-count of \"words\"", "The function has a docstring"]}
+{"sig": "lorum_ipsum(words: int) -> str", "pre": ["\"words\" is a non-negative integer"], "post": ["the return value is a lorem ipsum with a word-count of \"words\""]}

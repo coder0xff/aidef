@@ -1,1 +1,1 @@
-{"sig": "fibonacci(n: int) -> int", "pre": ["\"n\" is a non-negative integer"], "post": ["the return value is the nth fibonacci number", "The function has a docstring"]}
+{"sig": "fibonacci(n: int) -> int", "pre": ["\"n\" is a non-negative integer"], "post": ["the return value is the nth fibonacci number"]}
