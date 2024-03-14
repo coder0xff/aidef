@@ -1,28 +1,136 @@
 import ast
+from dataclasses import dataclass
 import inspect
 import json
 import re
 import sys
 import traceback
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, TypeAlias
 
 
 def extract_conditions_from_docstring(docstring: str) -> Tuple[List[str], List[str]]:
-    """Extract preconditions and postconditions from a docstring."""
+    """Parse preconditions and postconditions from a docstring. When a line
+    begins with \s+@pre or \s+@post, the following text including newlines is
+    a precondition or postcondition in the returned pair of lists,
+    respectively. @pre or @post inside 3x double quotes are ignored. Newlines
+    are converted to Posix line endings."""
+
     if docstring is None:
         return [], []
+    
+    pres: List[str] = []
+    posts: List[str] = []
+    current: Optional[List[str]] = None
+    State: TypeAlias = Optional[Callable[[str], "State"]] 
+    state: State = None
+    buffer = ""
+    pre_token = "@pre "
+    post_token = "@post "
 
-    preconditions = [
-        line.lstrip()[5:].lstrip()
-        for line in docstring.split("\n")
-        if line.lstrip().startswith("@pre ")
-    ]
-    postconditions = [
-        line.lstrip()[6:].lstrip()
-        for line in docstring.split("\n")
-        if line.lstrip().startswith("@post ")
-    ]
-    return preconditions, postconditions
+    def carriage_return(char: str) -> State:
+        nonlocal buffer
+        buffer += "\n"
+        if char == "\n":
+            return start_of_line_or_whitespace
+        return start_of_line_or_whitespace(char)
+
+    def start_of_line_or_whitespace(char: str) -> State:
+        nonlocal current
+        nonlocal buffer
+        if char == "\r":
+            return carriage_return
+        if char == "@":
+            if current is not None:
+                current[-1] += buffer
+            buffer = char
+            return at_symbol
+            
+        buffer += char
+        if char == "\"":
+            return quote
+        if char.isspace():
+            return start_of_line_or_whitespace
+        return content
+
+    def content(char: str) -> State:
+        nonlocal current
+        nonlocal buffer
+        if char == "\r":
+            return carriage_return
+        
+        buffer += char
+        if char == "\"":
+            return quote
+        if char == "\n":
+            return start_of_line_or_whitespace
+        return content
+
+    def at_symbol(char: str) -> State:
+        nonlocal current
+        nonlocal buffer
+        if char == "\r":
+            return carriage_return
+        
+        buffer += char
+        if char == "\"":
+            return quote
+        if buffer == pre_token:
+            buffer = ""
+            pres.append("")
+            current = pres
+            return content
+        if buffer == post_token:
+            buffer = ""
+            posts.append("")
+            current = posts
+            return content
+        if char != pre_token[len(buffer) - 1] and char != post_token[len(buffer) - 1]:
+            return content
+        return at_symbol
+
+    def quote(char: str) -> State:
+        nonlocal buffer
+        if char == "\r":
+            return carriage_return
+        
+        buffer += char
+        if buffer[-3:] == "\"\"\"":
+            return quoted
+        if char == "\"":
+            return quote
+        return content
+
+    def quoted_carriage_return(char: str) -> State:
+        nonlocal buffer
+        buffer += "\n"
+        if char == "\n":
+            return quoted
+        return quoted(char)
+
+    def quoted(char: str) -> State:
+        nonlocal buffer
+        if char == "\r":
+            return quoted_carriage_return
+        
+        buffer += char
+        if buffer[-3:] == "\"\"\"":
+            return content
+        return quoted
+
+    state = start_of_line_or_whitespace
+    for char in docstring:
+        if state is None:
+            if current is not None:
+                current[-1] += buffer
+            break
+        state = state(char)
+
+    if state is not None and current is not None:
+        current[-1] += buffer
+
+    pres = [stripped_pre for pre in pres if (stripped_pre := pre.strip())]
+    posts = [stripped_post for post in posts if (stripped_post := post.strip())]
+    return pres, posts
 
 
 def function_signature(func: Callable) -> str:

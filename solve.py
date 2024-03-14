@@ -1,9 +1,8 @@
-import asyncio
 import logging
 from typing import List, assert_never
 
 from chat import Chat
-from critic import Critic, Critique, Ready, Refine, Substitute
+from assessor import Assessor, Assessment, Approval, Critique, Substitution
 from format import format_list, format_list_item
 from log import getlogger
 
@@ -16,51 +15,65 @@ class CompletionError(Exception):
 
 
 class Generator:
+    """Generates text using an LLM"""
     def __init__(self, assumptions: List[str], objectives: List[str], clauseType: str):
-        """Return a fresh generator."""
+        """Create a generator primed with the given assumptions and objectives."""
         self.chat = Chat()
         self.clauseType = clauseType
 
         # Prepare the initial prompt
-        self.append("You are a generator. You will produce a text that satisfies the following ")
-        self.append("objectives and assumptions. Don't produce any other text such as metadata ")
-        self.append("or commentary. Ensure that the output is exactly as requested, avoiding ")
-        self.append("abstractions and stearing clear of distractions.\n")
+        self.chat.append("You are a generator. You will produce a text that satisfies the following ")
+        self.chat.append("objectives and assumptions. Don't produce any other text such as metadata ")
+        self.chat.append("or commentary. Ensure that the output is exactly as requested, avoiding ")
+        self.chat.append("abstractions and stearing clear of distractions.\n")
         self.chat.section("ASSUMPTIONS")
-        self.append(format_list(assumptions))
+        self.chat.append(format_list(assumptions))
         self.chat.section("OBJECTIVES")
-        self.append(format_list(objectives))
+        self.chat.append(format_list(objectives))
 
-    async def first_attempt(self) -> str:
+    async def first_shot(self) -> str:
+        """Make the first attempt at producing text of the desired clause type
+        that satisfies the objectives."""
         log.debug(" Generator is making a first attempt")
         return await self.chat.prompt(f"Produce a {self.clauseType} satisfying the objectives based on the assumptions.")
     
-    async def correction(self, critique: str) -> str:
+    async def refine(self, critique: str) -> str:
         log.debug(" Generator is refining")
         self.chat.section("CORRECTION")
-        self.append(critique)
+        self.chat.append(critique)
         return await self.chat.prompt(
             "Reply with a self-contained satisfication of the objectives and nothing more. "
             + "Avoid other changes than suggested by the correction."
         )
 
-    def append(self, txt):
-        self.chat.append(txt)
 
-    def spoof(self, txt: str):
-        self.chat.spoof_prompt(f"Produce a {self.clauseType} satisfying the objectives based on the assumptions.", txt)
-
-
-class Discriminator(Critic):
+class Discriminator(Assessor):
+    """Discriminates text for an objective using an LLM"""
     def __init__(self, assumptions: List[str], all_objectives: List[str], objective: str):
-        """Return a fresh discriminator."""
+        """Create a disriminator for the given objective, with context from the
+        given assumptions and all objectives."""
         self.assumptions = format_list(assumptions)
         self.objectives = format_list(all_objectives)
         self.objective = format_list_item(objective)
 
         self.reset()
 
-    async def test(self, text: str) -> Critique:
+    def reset(self):
+        """Clear the LLM context and prepare the initial prompt."""
+        self.chat = Chat()
+        self.chat.append("You are a discriminator. You evaluate text against requirements. ")
+        self.chat.append("Validate the included text against the below assumptions and ")
+        self.chat.append("objectives. Ensure that complete evidence of the chain of thought is ")
+        self.chat.append("provided in the text. You will decide whether the text strictly meets ")
+        self.chat.append("these requirements.\n")
+        self.chat.section("ASSUMPTIONS")
+        self.chat.append(self.assumptions)
+        self.chat.section("OBJECTIVES")
+        self.chat.append(self.objectives)
+
+    async def assess(self, text: str) -> Assessment:
+        """Test the text against the objective, and return a approval or
+        critique as appropriate"""
         self.chat.section("TEXT_BEGINS")
         self.chat.append(text)
         self.chat.section("TEXT_ENDS")
@@ -79,25 +92,12 @@ class Discriminator(Critic):
             correction = await self.chat.prompt(
                 "What changes do you suggest to make the text meet the objective?"
             )
-            return Refine(correction)
+            return Critique(correction)
         
-        return Ready()
+        return Approval()
     
-    def reset(self):
-        # Prepare the initial prompt
-        self.chat = Chat()
-        self.chat.append("You are a discriminator. You evaluate text against requirements. ")
-        self.chat.append("Validate the included text against the below assumptions and ")
-        self.chat.append("objectives. Ensure that complete evidence of the chain of thought is ")
-        self.chat.append("provided in the text. You will decide whether the text strictly meets ")
-        self.chat.append("these requirements.\n")
-        self.chat.section("ASSUMPTIONS")
-        self.chat.append(self.assumptions)
-        self.chat.section("OBJECTIVES")
-        self.chat.append(self.objectives)
 
-
-class FastDiscriminator(Critic):
+class FastDiscriminator(Assessor):
     def __init__(self, assumptions: List[str], objectives: List[str]):
         """Return a fresh discriminator."""
         self.assumptions = format_list(assumptions)
@@ -105,7 +105,9 @@ class FastDiscriminator(Critic):
 
         self.reset()
 
-    async def test(self, text: str) -> Critique:
+    async def assess(self, text: str) -> Assessment:
+        """Test the text against the objectives, and return a approval or
+        critique as appropriate"""
         self.chat.section("TEXT_BEGINS")
         self.chat.append(text)
         self.chat.section("TEXT_ENDS")
@@ -123,9 +125,9 @@ class FastDiscriminator(Critic):
             correction = await self.chat.prompt(
                 "What changes do you suggest to make the text meet the objective?"
             )
-            return Refine(correction)
+            return Critique(correction)
         
-        return Ready()
+        return Approval()
     
     def reset(self):
         # Prepare the initial prompt
@@ -140,126 +142,22 @@ class FastDiscriminator(Critic):
         self.chat.section("OBJECTIVES")
         self.chat.append(self.objectives)
 
-# def objective_critic(assumptions: List[str], objectives: List[str]) -> Critic:
-#     assumptions = list(assumptions)
-#     objectives = list(objectives)
-#     objective_index = None
-#     next_objective_index = 0  # a.k.a progress
-#     objective = objectives[next_objective_index]
-#     correction = None
-#     last_refinement_objective_index = None
-#     discriminator = Discriminator(assumptions, objectives, next_objective_index)
 
-#     async def f(text: str):
-#         nonlocal assumptions
-#         nonlocal objectives
-#         nonlocal objective_index
-#         nonlocal next_objective_index
-#         nonlocal objective
-#         nonlocal correction
-#         nonlocal last_refinement_objective_index
-#         nonlocal discriminator
-
-#         # Ask the discriminator if the text met the objective
-#         if (correction := await discriminator.test(text)):
-#             # It did not
-#             next_objective_index = 0
-
-#             # Remember the objective that caused a correction
-#             last_refinement_objective_index = objective_index
-            
-#             return Refine(correction)
-           
-#         # The text meets the objective!
-#         log.debug(f"{next_objective_index}/{len(objectives)} objectives met")
-
-#         # Check if all objectives are met
-#         if next_objective_index == len(objectives):
-#             # Success
-#             log.debug("Objective refinement succeeded!")
-#             return Ready()
-
-#         # Prepare the next objective
-#         objective_index = next_objective_index
-#         objective = objectives[objective_index]
-#         discriminator = Discriminator(assumptions, objectives, objective_index)
-
-#         next_objective_index += 1
-
-#         # The last objective that caused a refinement is remembered.
-#         # It already agreed with the present text, so not taksies backsies.
-#         if next_objective_index == last_refinement_objective_index:
-#             next_objective_index += 1
-
-#         # setup for the next iteration with the next objective
-
-#         return Inconclusive()
-
-#     return f
-
-
-async def refine(critics: List[Critic], iterations: int, generator: Generator, text: str):
-    assert iterations > 0
-
-    critics = list(critics)
-    queue = list(range(len(critics)))
-    run_counts = [0] * len(critics)
-
-    while iterations > 0 and queue:
-        i = queue[0]
-        run_counts[i] += 1
-        critic = critics[i]
-
-        critique = await critic.test(text)
-
-        match critique:
-            case Substitute(new_text):
-                text = new_text
-                queue.pop(0)
-            case Refine(correction):
-                # The critic has a suggestion for a refinement
-                # If no more attempts may be made, fail the solve
-                if iterations == 0:
-                    raise CompletionError("The generator was unable to produce a satisfactory result.")
-                
-                # Add all critics back to the queue
-                queue = list(range(len(critics)))
-                # Except the current critic stays at the front of the queue
-                del queue[i]
-                queue.insert(0, i)
-
-                for j in range(1, len(critics)):
-                    # Reset all critics except the current one
-                    critics[j].reset()
-
-                # The refinement says what to do, but additional negative prompt helps the generator
-                text = await generator.correction(correction)
-                iterations -= 1
-            case Ready():
-                queue.pop(0)
-                log.debug(f"Refine progress: {len(critics) - len(queue)}/{len(critics)}")
-            case _ as unreachable:
-                assert_never(unreachable)
-
-    log.debug("Refine succeeded!")
-    return text
-
-
-async def answer(
+async def solve(
     assumptions: List[str],
     objectives: List[str],
     clauseType: str,
     iterations: int = 25,
-    checkers: List[Critic] = [],
+    assessors: List[Assessor] = [],
     fast: bool = False,
 ) -> str:
-    """Solve a problem by iteratively refining a text to meet the given assumptions and objectives.
+    """Solve a problem by iteratively refining a solution to meet the given assumptions and objectives.
     
     assumptions: a list of assumptions that are assumed to hold true, and any verification of them is erroneous
     objectives: a list of objectives that the text should satisfy
-    clauseType: the type of clause that the text should be
+    clauseType: the type of clause that the text should be (e.g. "sentence", "Python function")
     iterations: the number of iterations to perform
-    checkers: errors to feed to the generator
+    assessors: a list of assessors (in addition to the objectives) that will critique the solution
     
     Return the refined text that satisfies the given assumptions and objectives.
     """
@@ -278,14 +176,84 @@ async def answer(
     objectives.append(f"the text is a {clauseType}")
     objectives.append("assumptions are not questioned, nor verified, nor tested")
 
-    critics = list(checkers)
+    # Choose how stringent to be with the assessors
+    assessors = list(assessors)
     if fast:
-        critics.append(FastDiscriminator(assumptions, objectives))
+        assessors.append(FastDiscriminator(assumptions, objectives))
     else:
         for objective in objectives:
-            critics.append(Discriminator(assumptions, objectives, objective))
+            assessors.append(Discriminator(assumptions, objectives, objective))
 
+    # Generate the first attempt
     generator = Generator(assumptions, objectives, clauseType)
-    first_attempt = await generator.first_attempt()
+    first_attempt = await generator.first_shot()
 
-    return await refine(critics, iterations, generator, first_attempt)
+    # Refine the first attempt until it satisfies the assessors
+    return await refine(assessors, iterations, generator, first_attempt)
+
+
+async def refine(assessors: List[Assessor], iterations: int, generator: Generator, text: str):
+    """
+    Starting with a first shot at a text, iteratively refine it with the given
+    assessors.
+    
+    assessors: a list of assessors to use for refining the text
+    iterations: the number of iterations to perform
+    generator: the generator to use for refining the text
+    text: the initial text to refine
+
+    Return the refined text that satisfies the given assessors or raise a
+    CompletionError if no satisfactory result is found within the iteration
+    limit.
+    """
+
+    assert iterations > 0
+
+    assessors = list(assessors)
+    queue = list(range(len(assessors)))
+    run_counts = [0] * len(assessors)
+
+    while iterations > 0 and queue:
+        i = queue[0]
+        run_counts[i] += 1
+        assessor = assessors[i]
+
+        assessment = await assessor.assess(text)
+
+        match assessment:
+            case Approval():
+                # The assessor approves. Continue with the next assessor.
+                queue.pop(0)
+                log.debug(f"Refine progress: {len(assessors) - len(queue)}/{len(assessors)}")
+            case Critique(feedback):
+                # The assessor has feedback for a refinement
+                # If no more attempts may be made, fail the solve
+                if iterations == 0:
+                    raise CompletionError("The generator was unable to produce a satisfactory result.")
+                
+                # All the assessors get another shot at feedback when the text
+                # is refined, so reset the queue
+                queue = list(range(len(assessors)))
+                # except the current assessor stays at the front of the queue
+                del queue[i]
+                queue.insert(0, i)
+                # Reset (e.g. clear chat context) all the assessors, except
+                # the current one
+                for j in range(1, len(assessors)):
+                    assessors[j].reset()
+
+                # Refine the text
+                text = await generator.refine(feedback)
+                iterations -= 1
+            case Substitution(new_text):
+                # The assessor approves, but transformed (formatted) the text.
+                # Continue with the assessor's substitution.
+                text = new_text
+                queue.pop(0)
+            case _ as unreachable:
+                assert_never(unreachable)
+
+    log.debug("Refine succeeded!")
+    return text
+
+

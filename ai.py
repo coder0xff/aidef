@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from aieval import aieval
 from cache import cached
-from critic import Critic, Critique, JSON, PYTHON, Ready, Refine
+from assessor import Assessor, Assessment, JSON, PYTHON, Approval, Critique
 from funcutils import (
     create_callable_from_str,
     dump_last_exception,
@@ -16,68 +16,21 @@ from funcutils import (
     function_signature,
 )
 from log import getlogger
-from solve import Critic, answer
+from solve import Assessor, solve
 
 
 log = getlogger(__name__)
 log.setLevel("DEBUG")
 
 
+# Special names that are ignored by the global_functions_text function
 IGNORED_GLOBALS = [
     ("def f(*args, **kwargs):", None),
     ("def f_async(*args, **kwargs):", None),
 ]
 
 
-callable_cache = {}
-def cached_is_callable(symbol: Any) -> bool:
-    try:
-        if symbol in callable_cache:
-            return callable_cache[symbol]
-    except TypeError:
-        return False
-    result = callable(symbol)
-    callable_cache[symbol] = result
-    return result
-
-
-def global_functions_text(excluded_names: List[str]) -> str:
-    global_functions = ""
-    for value in globals().values():
-        if cached_is_callable(value):                    
-            if value.__name__ in excluded_names:
-                continue
-            if value.__module__ in {"typing", "builtins"}:
-                continue
-            try:
-                signature = f"def {value.__name__}{inspect.signature(value)}:"
-            except ValueError:
-                continue
-            if (signature, value.__doc__) in IGNORED_GLOBALS:
-                continue
-            global_functions + "\n"
-            global_functions += f'{signature}\n    """{value.__doc__}"""\n'
-
-
-def run_function_test(function_under_test: str, test_function: str) -> Optional[str]:
-    namespace = {}
-    create_callable_from_str(function_under_test, namespace)
-    test = create_callable_from_str(test_function, namespace)
-    # redirect stdout to a string
-    redirected = sys.stdout = io.StringIO()
-    try:
-        test()
-    finally:
-        # restore stdout
-        sys.stdout = sys.__stdout__
-    output = redirected.getvalue()
-    if "PASS\n" in output:
-        return None
-    if "FAIL\n" not in output:
-        raise Exception("The test did not print 'PASS\\n' or 'FAIL\\n'.")
-    return output
-
-
+# Generate a collection of test descriptions
 @aieval(JSON, ext="json")
 def generate_test_cases(
     signature: str, preconditions: List[str], postconditions: List[str]
@@ -93,6 +46,7 @@ def generate_test_cases(
     """
 
 
+# Give test names to a collection of test_descriptions
 @aieval(JSON, ext="json")
 def generate_test_case_names(
     signature: str,
@@ -109,6 +63,7 @@ def generate_test_case_names(
     """
 
 
+# Generate a Python test function from a name and description
 @aieval(PYTHON, ext="py")
 async def generate_test(
     signature: str,
@@ -129,31 +84,7 @@ async def generate_test(
     """
 
 
-@aieval(PYTHON, ext="py")
-async def refine_test(
-    signature: str,
-    preconditions: List[str],
-    postconditions: List[str],
-    test_name: str,
-    test_description: str,
-    test_function: str,
-    test_result: str,
-) -> str:
-    """
-    @pre "signature" is signature of the function under test
-    @pre "preconditions" is a list of preconditions of the function under test
-    @pre "postconditions" is a list of postconditions of the function under test
-    @pre "test_name" is the name of the Python test to implement for the function under test
-    @pre "test_description" is the test case description of the Python test to implement for the function under test
-    @pre "test_function" is the Python function that executed the test
-    @pre "test_result" is the text that was printed by the test function
-    @post the return value is a refined "test_function"
-    @post the return value is a Python function that calls the function under test within a try block using the described inputs
-    @post the return value is a Python function that does not put any code in a try block other than the call to the function under test
-    @post the return value is a Python function that prints 1) the expected output of the function under test, 2) the actual output of the function under test, and 3) "PASS" or "FAIL" to stdout to communicate the results
-    """
-
-
+# Decide why a test failed, the function, or the test
 @aieval
 async def accuse_test_failure(
     signature: str,
@@ -183,6 +114,58 @@ async def accuse_test_failure(
     """
 
 
+# Refine a Python test function from the stdout of its failure
+@aieval(PYTHON, ext="py")
+async def refine_test(
+    signature: str,
+    preconditions: List[str],
+    postconditions: List[str],
+    test_name: str,
+    test_description: str,
+    test_function: str,
+    test_result: str,
+) -> str:
+    """
+    @pre "signature" is signature of the function under test
+    @pre "preconditions" is a list of preconditions of the function under test
+    @pre "postconditions" is a list of postconditions of the function under test
+    @pre "test_name" is the name of the Python test to implement for the function under test
+    @pre "test_description" is the test case description of the Python test to implement for the function under test
+    @pre "test_function" is the Python function that executed the test
+    @pre "test_result" is the text that was printed by the test function
+    @post the return value is a refined "test_function"
+    @post the return value is a Python function that calls the function under test within a try block using the described inputs
+    @post the return value is a Python function that does not put any code in a try block other than the call to the function under test
+    @post the return value is a Python function that prints 1) the expected output of the function under test, 2) the actual output of the function under test, and 3) "PASS" or "FAIL" to stdout to communicate the results
+    """
+
+
+def ai(func: Callable) -> Callable:
+    """A decorator that generates the body of a Python function given its pre
+    and post conditions using an LLM. Functions and tests are cached."""
+    # Use introspection to get name, signature, and pre and post conditions
+    name = func.__name__
+    sig = function_signature(func)
+    pre, post = extract_conditions_from_docstring(func.__doc__)
+    if not pre and not post:
+        # Generate pro and post conditions if there aren't any in the docstring
+        conditions = json.loads(conditions_from_description(func.__doc__, sig))
+        pre, post = conditions["preconditions"], conditions["postconditions"]
+
+    # Do the generation
+    func_and_tests = asyncio.run(generate_python(name, sig, pre, post))
+
+    # Split the function and tests
+    r = re.compile(r"^def ", re.MULTILINE)
+    split_indices = [m.start() for m in r.finditer(func_and_tests)]
+    func_def, *tests = [f for i, j in zip(split_indices, split_indices[1:] + [-1]) if (f:=func_and_tests[i:j]).strip()]
+    # "Load" the function and return it
+    result = create_callable_from_str(func_def)
+    if func.__doc__ is not None:
+        result.__doc__ = result.__doc__ + "\n" + func.__doc__
+    return result
+
+
 async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) -> str:
     """Generate the body of a Python function and its tests from its pre and post conditions."""
     post = list(post)
@@ -194,15 +177,19 @@ async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) 
         if not cache.has_value:
             log.debug(f"Generating Python function for {name}.")
 
+            # Use LLM to generate test cases
             test_cases = generate_test_cases(sig, pre, post)
-            # Sometimes the test cases include extra information that we don't want
+            # Strip undesired information that the LLM may have produced
             test_cases = [{"description": v["description"], "inputs": v["inputs"]} for v in test_cases]            
             log.debug(f"Generated test cases for Python function {name}.")
 
+            # Assign a name to each test case
             test_names = generate_test_case_names(sig, pre, post, test_cases)
             log.debug(f"Generated names for the test cases for Python function {name}.")
 
+            # Generate test implementations
             async def generate_tests():
+                """Generate test implementations in parallel"""
                 coroutines = []
                 for test_name, test_case in zip(test_names, test_cases):
                     log.debug(f"Generating test {test_name}")
@@ -211,15 +198,17 @@ async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) 
                     )
                 return await asyncio.gather(*coroutines)
                 # return [await coroutine for coroutine in coroutines]  # for debugging
-
             log.debug(f"Generating tests for Python function {name}.")
             test_funcs = await generate_tests()
             log.debug(f"Generated tests for Python function {name}.")
-            class Tester(Critic):
+
+            class Tester(Assessor):
+                """An assessor that runs tests, refines them and/or gives
+                feedback to the generator."""
                 def __init__(self, i: int):
                     self.i = i
 
-                async def test(self, text: str) -> Critique:
+                async def assess(self, text: str) -> Assessment:
                     i = self.i
                     ALLOWED_ATTEMPTS = 5
                     attempt = 0
@@ -268,14 +257,14 @@ async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) 
                                     break
                                 if "CULPRIT: function_implementation" in accusation:
                                     log.debug(f"Refining {name}.")
-                                    return Refine(accusation)
+                                    return Critique(accusation)
                             else:
                                 raise Exception(
                                     "Analysis of the test failure did not yield a clear culprit."
                                 )
                         else:
                             log.debug(f"Test {test_names[i]} passed.")
-                            return Ready()
+                            return Approval()
                     else:
                         raise Exception("Test failed to pass after refinement.")
 
@@ -294,11 +283,11 @@ async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) 
             post = list(post)
             post.append("The function has a docstring")
             
-            func_def = await answer(
+            func_def = await solve(
                 pre + inputs,
                 post,
                 f"Python function with signature `{sig}`",
-                checkers=checkers,
+                assessors=checkers,
             )
 
             func_and_tests = func_def + "\n\n" + "\n\n".join(test_funcs)
@@ -310,6 +299,41 @@ async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) 
         func_def = source_file.read()
 
     return func_def
+
+
+def run_function_test(function_under_test: str, test_function: str) -> Optional[str]:
+    """Run a test function and return the output. Return None if the test
+    function printed "PASS" and the stdout if the test function printed
+    "FAIL"."""
+
+    # create a namespace for the function under test so it doesn't leak into
+    # the global namespace
+    namespace = {}
+    # evaluate the source code of the function under test
+    create_callable_from_str(function_under_test, namespace)
+    # evaluate the source code of the test function
+    test = create_callable_from_str(test_function, namespace)
+    # redirect stdout to a string
+    redirected = sys.stdout = io.StringIO()
+
+    # Exceptions are useful for refinement, but they'll be caught by the caller
+    try:
+        # run the test
+        test()
+    finally:
+        # restore stdout
+        sys.stdout = sys.__stdout__
+
+    # get the stdout of the test
+    output = redirected.getvalue()
+    if "PASS\n" in output:
+        # The test passed, no feedback needed
+        return None
+    if "FAIL\n" not in output:
+        # The test failed to print PASS or FAIL, so it errored
+        raise Exception("The test did not print 'PASS\\n' or 'FAIL\\n'.")
+    # The test failed, so return the output
+    return output
 
 
 @aieval(JSON, ext="json")
@@ -337,25 +361,35 @@ def conditions_from_signature(signature: str) -> str:
     """
 
 
-def ai(func: Callable) -> Callable:
-    """A decorator that generates the body of a function from its pre and post conditions using the
-    OpenAI API. Functions will be cached in the wordking directory."""
-    # Use introspection to get the pre and post conditions from the docstring
-    name = func.__name__
-    sig = function_signature(func)
-    pre, post = extract_conditions_from_docstring(func.__doc__)
-    if not pre and not post:
-        conditions = json.loads(conditions_from_description(func.__doc__, sig))
-        pre, post = conditions["preconditions"], conditions["postconditions"]
-
-    # Do the work of generating the function implementation
-    func_and_tests = asyncio.run(generate_python(name, sig, pre, post))
-
-    r = re.compile(r"^def ", re.MULTILINE)
-    split_indices = [m.start() for m in r.finditer(func_and_tests)]
-    func_def, *tests = [f for i, j in zip(split_indices, split_indices[1:] + [-1]) if (f:=func_and_tests[i:j]).strip()]
-    result = create_callable_from_str(func_def)
-    if func.__doc__ is not None:
-        result.__doc__ = result.__doc__ + "\n" + func.__doc__
-    globals()[name] = result
+callable_cache = {}
+def cached_is_callable(symbol: Any) -> bool:
+    """Return True iff the symbol is callable. Cache the result."""
+    try:
+        if symbol in callable_cache:
+            return callable_cache[symbol]
+    except TypeError:
+        return False
+    result = callable(symbol)
+    callable_cache[symbol] = result
     return result
+
+
+def global_functions_text(excluded_names: List[str]) -> str:
+    """Return a string containing the names, signatures, and docstrings of all
+    global functions. (Excluding those in the "typing" and "builtins"
+    modules.)"""
+    global_functions = ""
+    for value in globals().values():
+        if cached_is_callable(value):                    
+            if value.__name__ in excluded_names:
+                continue
+            if value.__module__ in {"typing", "builtins"}:
+                continue
+            try:
+                signature = f"def {value.__name__}{inspect.signature(value)}:"
+            except ValueError:
+                continue
+            if (signature, value.__doc__) in IGNORED_GLOBALS:
+                continue
+            global_functions + "\n"
+            global_functions += f'{signature}\n    """{value.__doc__}"""\n'
