@@ -22,7 +22,7 @@ log = getlogger(__name__)
 log.setLevel(logging.DEBUG)
 
 
-def _generate_callable(func: Callable, validators: Dict = {}, ext: str = "txt", fast: bool = False) -> Callable:
+def _generate_callable(func: Callable, assessors: Dict = {}, ext: str = "txt", fast: bool = False) -> Callable:
     """Generate the function that will be returned by the aieval decorator."""
 
     # Get basic information about the function and its signature.
@@ -53,7 +53,7 @@ def _generate_callable(func: Callable, validators: Dict = {}, ext: str = "txt", 
 
                 # Evaluate the function using the LLM solve
                 result = await solve(
-                    pre + inputs, post, return_type.__name__, assessors=validators, fast=fast
+                    pre + inputs, post, return_type.__name__, assessors=assessors, fast=fast
                 )
 
                 log.debug(f"Finished evaluating {func_name}")
@@ -85,20 +85,20 @@ def aieval(*args, **kwargs) -> Callable:
 
     # is the input an Assessor list?
     if args and isinstance(args[0], list):
-        validators = args[0]
+        assessors = args[0]
     else:
-        validators = {}
+        assessors = {}
 
     # if aieval was passed configuration and not a function (yet)
-    if kwargs or validators:
+    if kwargs or assessors:
         # Prepare the configuration and return a new decorator that
         # will wrap the function its passed
-        validators = kwargs.get("validators", validators)
+        assessors = kwargs.get("assessors", assessors)
         ext = kwargs.get("ext", "txt")
         fast = kwargs.get("fast", False)
 
         def f(func):
-            return _generate_callable(func, validators=validators, ext=ext, fast=fast)
+            return _generate_callable(func, assessors=assessors, ext=ext, fast=fast)
 
         return f
 

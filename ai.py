@@ -268,8 +268,8 @@ async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) 
                     else:
                         raise Exception("Test failed to pass after refinement.")
 
-            checkers = list(PYTHON)
-            checkers.extend([Tester(i) for i in range(len(test_funcs))])
+            assessors = list(PYTHON)
+            assessors.extend([Tester(i) for i in range(len(test_funcs))])
 
             global_functions = global_functions_text([name])
 
@@ -287,7 +287,7 @@ async def generate_python(name: str, sig: str, pre: List[str], post: List[str]) 
                 pre + inputs,
                 post,
                 f"Python function with signature `{sig}`",
-                assessors=checkers,
+                assessors=assessors,
             )
 
             func_and_tests = func_def + "\n\n" + "\n\n".join(test_funcs)
